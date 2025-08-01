@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ESP32-CAM Live Feed</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
+      text-align: center;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 20px;
+      background-color: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .logo {
+      height: 50px;
+    }
+    .button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 20px;
+      background: linear-gradient(to right, #d16ba5, #86a8e7);
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    h2 {
+      margin-top: 20px;
+      color: #333;
+    }
+    #live {
+      width: 90%;
+      max-width: 600px;
+      margin: 20px auto;
+      background: #ccc;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #liveImage {
+      width: 100%;
+    }
+
+  </style>
+</head>
+<body>
+  <header>
+    <a href="https://doorsure-sd25.web.app/" class="button">Return</a>
+    <img class="logo" src="https://i.ibb.co/jZfwn188/logo.png" alt="DoorSure Logo" />
+  </header>
+
+  <h2>📸 Live Feed</h2>
+  <div id="live">
+    <img id="liveImage" src="" width="100%" />
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCjCXahhzsjSH1dmB5F0GGgw6TNTjpwudg",
+      authDomain: "esp32-object-detection-d863a.firebaseapp.com",
+      databaseURL: "https://esp32-object-detection-d863a-default-rtdb.firebaseio.com",
+      projectId: "esp32-object-detection-d863a",
+      storageBucket: "esp32-object-detection-d863a.appspot.com",
+      messagingSenderId: "572491364622",
+      appId: "1:572491364622:web:5f916612bb18a61a09bf5f"
+    };
+  
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const img = document.getElementById("liveImage");
+  
+    let lastUrl = "";
+  
+    db.ref("/liveSnapshots/latest/url").on("value", (snapshot) => {
+      const url = snapshot.val();
+      if (url && url !== lastUrl) {
+        lastUrl = url;
+  
+        // Force reload by creating a brand new Image object
+        const newImg = new Image();
+        newImg.onload = () => {
+          img.src = newImg.src; // Swap only after fully loaded
+        };
+        newImg.src = url + "&t=" + new Date().getTime(); // Cache buster
+      }
+    });
+  </script>
+  
+  
+  
+  
+</body>
+</html>

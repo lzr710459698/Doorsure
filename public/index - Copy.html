@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ESP32 Image Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 500px;
+      margin: auto;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    #return-button {
+      background: linear-gradient(135deg, #b76d68, #5a8c89);
+      color: white;
+      border: none;
+      border-radius: 1rem;
+      padding: 0.4rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    #logo {
+      height: 50px;
+      object-fit: contain;
+    }
+
+    h2 {
+      text-align: center;
+      color: #333;
+      margin-top: 1.5rem;
+    }
+
+    .log-container {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .log-entry {
+      padding: 0.4rem 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    em {
+      font-style: italic;
+    }
+
+    #img-preview {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 10px;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <a href="https://doorsure-sd25.web.app/">
+        <button id="return-button">Return</button>
+      </a>
+      <img id="logo" src="logo.png" alt="DoorSure Logo" />
+    </div>
+    
+
+    <h2>🖼️ Latest Snapshot</h2>
+    <div class="log-container">
+      <img id="img-preview" src="" alt="Latest image from Firebase" />
+    </div>
+
+    <h2>📌 Recent Log</h2>
+    <div class="log-container" id="recent-detection"></div>
+
+    <h2>📜 Full Log</h2>
+    <div class="log-container" id="full-log"></div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCjCXahhzsjSH1dmB5F0GGgw6TNTjpwudg",
+      authDomain: "esp32-object-detection-d863a.firebaseapp.com",
+      databaseURL: "https://esp32-object-detection-d863a-default-rtdb.firebaseio.com",
+      projectId: "esp32-object-detection-d863a",
+      storageBucket: "esp32-object-detection-d863a.appspot.com",
+      messagingSenderId: "572491364622",
+      appId: "1:572491364622:web:5f916612bb18a61a09bf5f"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const detectionsRef = db.ref("detections");
+    const imageUrlRef = db.ref("images/latest/url");
+    const gLengthRef = db.ref("g_length");
+
+    const recentBox = document.getElementById("recent-detection");
+    const fullBox = document.getElementById("full-log");
+    const imgPreview = document.getElementById("img-preview");
+    const gLengthBox = document.getElementById("g-length");
+
+    // === Get Latest Image from Firebase Storage ===
+    imageUrlRef.on("value", (snapshot) => {
+      const url = snapshot.val();
+      if (url) {
+        imgPreview.src = url;
+      }
+    });
+
+    // === Listen for g_length ===
+    gLengthRef.on("value", (snapshot) => {
+      const gLength = snapshot.val();
+      console.log("🧪 g_length updated:", gLength);
+      gLengthBox.innerHTML = `<strong>g_length:</strong> ${gLength}`;
+    });
+
+    // === Listen for Detections ===
+    detectionsRef.on("value", (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      const keys = Object.keys(data).sort().reverse();
+      const recent = keys.slice(0, 10).map(k => data[k]);
+
+      // === Update Recent Log ===
+      recentBox.innerHTML = '';
+      if (recent[0]) {
+        const div = document.createElement("div");
+        div.className = "log-entry";
+        div.innerHTML = `<em>${recent[0].object}</em> detected with ${recent[0].confidence.toFixed(2)}% confidence.`;
+        recentBox.appendChild(div);
+      }
+
+      // === Update Full Log ===
+      fullBox.innerHTML = '';
+      keys.forEach(k => {
+        const item = data[k];
+        const div = document.createElement("div");
+        div.className = "log-entry";
+        div.innerHTML = `<em>${item.object}</em> detected with ${item.confidence.toFixed(2)}% confidence.`;
+        fullBox.appendChild(div);
+      });
+    });
+  </script>
+</body>
+</html>

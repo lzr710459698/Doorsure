@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <title>ESP32 Image Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      width: 100%;
+      max-width: 500px;
+      margin: auto;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    #close-button {
+      background: linear-gradient(135deg, #b76d68, #5a8c89);
+      color: white;
+      border: none;
+      border-radius: 1rem;
+      padding: 0.4rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+    }
+    #logo {
+      height: 50px;
+      object-fit: contain;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+      margin-top: 1.5rem;
+    }
+    .log-container {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    #img-preview {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 10px;
+      margin-top: 0.5rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <button id="close-button">Close</button>
+      <img id="logo" src="logo.png" alt="DoorSure Logo" />
+    </div>
+
+    <h2> Live Stream</h2>
+    <div class="log-container">
+      <img id="img-preview" src="" alt="Live stream from ESP32" />
+    </div>
+
+    <h2> Streaming Control</h2>
+    <div class="log-container" style="text-align: center;">
+      <button id="start-stream" style="margin: 0.5rem; padding:0.6rem 1rem;">▶️ Start Streaming</button>
+      <button id="stop-stream" style="margin: 0.5rem; padding:0.6rem 1rem;">⏹ Stop Streaming</button>
+      <p id="stream-status" style="margin-top:0.5rem; color:#555;">Status: Unknown</p>
+    </div>
+
+    <h2> AI Detection Result</h2>
+    <div class="log-container" style="text-align: center;">
+      <p id="gemini-result">Waiting for analysis...</p>
+      <button id="snap-button" style="margin-top: 1rem; padding:0.6rem 1rem; font-size:1rem; width: 100%;">Start Identification</button>
+    </div>
+  </div>
+
+  <script>
+    const app1 = firebase.initializeApp({
+      apiKey: "AIzaSyCjCXahhzsjSH1dmB5F0GGgw6TNTjpwudg",
+      authDomain: "esp32-object-detection-d863a.firebaseapp.com",
+      databaseURL: "https://esp32-object-detection-d863a-default-rtdb.firebaseio.com",
+      projectId: "esp32-object-detection-d863a",
+      storageBucket: "esp32-object-detection-d863a.appspot.com",
+      messagingSenderId: "572491364622",
+      appId: "1:572491364622:web:5f916612bb18a61a09bf5f"
+    });
+
+    const app2 = firebase.initializeApp({
+      apiKey: "AIzaSyCB_Gz5ADmjLxxxBYZ0OS7k_C03Wo42xFY",
+      authDomain: "doorsure-sd25.firebaseapp.com",
+      databaseURL: "https://doorsure-sd25-default-rtdb.firebaseio.com/",
+      projectId: "doorsure-sd25",
+      storageBucket: "doorsure-sd25.firebasestorage.app",
+      messagingSenderId: "417711210584",
+      appId: "1:417711210584:web:cec2421dafb4a19f008a2d",
+      measurementId: "G-ZWNQT99F1Y"
+    }, "app2");
+
+    const db1 = firebase.database(app1);
+    const db2 = firebase.database(app2);
+
+    const triggerRef = db1.ref("trigger/takePhoto");
+    const streamControlRef = db1.ref("trigger/streaming");
+    const resultRef = db1.ref("images/latest/result");
+    const gLengthRef = db1.ref("g_length");
+    const ultrasonicRef = db1.ref("ultrasonic/distance_inch");
+    const obstructionRef = db2.ref("obj_obstruction");
+
+    const imgPreview = document.getElementById("img-preview");
+    const snapBtn = document.getElementById("snap-button");
+    const resultBox = document.getElementById("gemini-result");
+    const streamStatus = document.getElementById("stream-status");
+
+    let currentGLength = null;
+    let currentDistance = null;
+    let lastTime = Date.now();
+    let hasRequestedAI = false;
+    let imageInterval = null;
+    let isStreaming = false;
+
+    const publicUrl = "https://firebasestorage.googleapis.com/v0/b/esp32-object-detection-d863a.firebasestorage.app/o/images%2Fstream.jpg?alt=media&token=7331d93c-a87a-48d7-9a53-95b7435ce26a";
+
+    function updateImage() {
+      const now = Date.now();
+      imgPreview.src = publicUrl + "&t=" + now;
+    }
+
+    snapBtn.onclick = async () => {
+      hasRequestedAI = true;
+      resultBox.textContent = "Waiting for analysis...";
+      await triggerRef.set(1);
+    };
+
+    document.getElementById("start-stream").onclick = async () => {
+      await streamControlRef.set(true);
+    };
+
+    document.getElementById("stop-stream").onclick = async () => {
+      await streamControlRef.set(false);
+      hasRequestedAI = false; // ✅ Do not clear resultBox
+    };
+
+    streamControlRef.on("value", (snapshot) => {
+      isStreaming = snapshot.val();
+      streamStatus.textContent = isStreaming ? "🟢 Streaming Enabled" : "🔴 Streaming Disabled";
+
+      if (isStreaming) {
+        imgPreview.style.display = "block";
+        imageInterval = setInterval(updateImage, 200);
+      } else {
+        clearInterval(imageInterval);
+        imgPreview.style.display = "none";
+        imgPreview.src = "";
+      }
+    });
+
+    gLengthRef.on("value", (snapshot) => {
+      currentGLength = snapshot.val();
+      checkAndUpdateObstruction();
+    });
+
+    ultrasonicRef.on("value", (snapshot) => {
+      currentDistance = snapshot.val();
+      checkAndUpdateObstruction();
+    });
+
+    function checkAndUpdateObstruction() {
+      if (currentGLength !== null && currentDistance !== null) {
+        if (parseFloat(currentDistance) < parseFloat(currentGLength)) {
+          obstructionRef.set(1);
+        } else {
+          obstructionRef.set(0);
+        }
+      }
+    }
+
+    resultRef.on("value", (snapshot) => {
+      if (!hasRequestedAI) return;
+      const result = snapshot.val();
+      resultBox.textContent = result ? result : "No result available.";
+    });
+
+    document.getElementById("close-button").onclick = async () => {
+      try {
+        await streamControlRef.set(false);
+        clearInterval(imageInterval);
+        imgPreview.style.display = "none";
+        imgPreview.src = "";
+        resultBox.textContent = ""; // ✅ Clears result on close
+        hasRequestedAI = false;
+
+        window.close();
+        setTimeout(() => {
+          window.location.href = "about:blank";
+        }, 300);
+      } catch (e) {
+        alert("Could not close the page automatically. Please close it manually.");
+      }
+    };
+
+    // Automatically stop streaming when leaving or hiding the page
+    function stopStreamOnExit() {
+      streamControlRef.set(false);
+      clearInterval(imageInterval);
+      imgPreview.style.display = "none";
+      imgPreview.src = "";
+    }
+
+    // Stop stream on page unload (close, refresh, back)
+    window.addEventListener("beforeunload", stopStreamOnExit);
+
+    // Stop stream when user switches tab or minimizes window
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        stopStreamOnExit();
+      }
+    });
+
+
+  </script>
+</body>
+</html>

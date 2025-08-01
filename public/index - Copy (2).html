@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ESP32 Image Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      width: 100%;
+      max-width: 500px;
+      margin: auto;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    #return-button {
+      background: linear-gradient(135deg, #b76d68, #5a8c89);
+      color: white;
+      border: none;
+      border-radius: 1rem;
+      padding: 0.4rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+    }
+    #logo {
+      height: 50px;
+      object-fit: contain;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+      margin-top: 1.5rem;
+    }
+    .log-container {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    #img-preview {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 10px;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <a href="https://doorsure-sd25.web.app/">
+        <button id="return-button">Return</button>
+      </a>
+      <img id="logo" src="logo.png" alt="DoorSure Logo" />
+    </div>
+
+    <h2>🖼️ Latest Snapshot</h2>
+    <div class="log-container">
+      <img id="img-preview" src="" alt="Latest image from Firebase" />
+    </div>
+
+    <div class="log-container" style="text-align: center;">
+      <button id="snap-button" style="padding:0.6rem 1rem; font-size:1rem; width: 100%;">📸 Take Snapshot</button>
+      <p id="snap-status" style="margin-top:0.5rem; color:#555;">Status: Waiting for trigger...</p>
+    </div>
+    
+
+    <h2>🔍 AI Detection Result</h2>
+    <div class="log-container">
+      <p id="gemini-result">Waiting for analysis...</p>
+    </div>
+  </div>
+
+  <script>
+    const app1 = firebase.initializeApp({
+      apiKey: "AIzaSyCjCXahhzsjSH1dmB5F0GGgw6TNTjpwudg",
+      authDomain: "esp32-object-detection-d863a.firebaseapp.com",
+      databaseURL: "https://esp32-object-detection-d863a-default-rtdb.firebaseio.com",
+      projectId: "esp32-object-detection-d863a",
+      storageBucket: "esp32-object-detection-d863a.appspot.com",
+      messagingSenderId: "572491364622",
+      appId: "1:572491364622:web:5f916612bb18a61a09bf5f"
+    }, "app1");
+
+    const app2 = firebase.initializeApp({
+      apiKey: "AIzaSyCB_Gz5ADmjLxxxBYZ0OS7k_C03Wo42xFY",
+      authDomain: "doorsure-sd25.firebaseapp.com",
+      databaseURL: "https://doorsure-sd25-default-rtdb.firebaseio.com/",
+      projectId: "doorsure-sd25",
+      storageBucket: "doorsure-sd25.firebasestorage.app",
+      messagingSenderId: "417711210584",
+      appId: "1:417711210584:web:cec2421dafb4a19f008a2d",
+      measurementId: "G-ZWNQT99F1Y"
+    }, "app2");
+
+    const db1 = firebase.database(app1);
+    const imageUrlRef = db1.ref("images/latest/url");
+    const gLengthRef = db1.ref("g_length");
+    const ultrasonicRef = db1.ref("ultrasonic/distance_inch");
+    const triggerRef = db1.ref("trigger/takePhoto");
+    const resultRef = db1.ref("images/latest/result");
+
+    const db2 = firebase.database(app2);
+    const obstructionRef = db2.ref("obj_obstruction");
+
+    const imgPreview = document.getElementById("img-preview");
+    const snapBtn = document.getElementById("snap-button");
+    const snapStatus = document.getElementById("snap-status");
+    const resultBox = document.getElementById("gemini-result");
+
+    let currentGLength = null;
+    let currentDistance = null;
+
+    function checkAndUpdateObstruction() {
+      if (currentGLength !== null && currentDistance !== null) {
+        if (parseFloat(currentDistance) < parseFloat(currentGLength)) {
+          obstructionRef.set(1);
+          console.log("🚨 Obstruction detected! obj_obstruction set to 1");
+        } else {
+          obstructionRef.set(0);
+          console.log("✅ Path is clear. obj_obstruction set to 0");
+        }
+      }
+    }
+
+    snapBtn.onclick = async () => {
+      snapStatus.textContent = "📤 Sending trigger to ESP32...";
+      await triggerRef.set(1);
+      snapStatus.textContent = "📡 Waiting for ESP32 to upload image...";
+    };
+
+    imageUrlRef.on("value", (snapshot) => {
+      const url = snapshot.val();
+      if (url) {
+        imgPreview.src = url;
+        snapStatus.textContent = "✅ Image uploaded!";
+      }
+    });
+
+    gLengthRef.on("value", (snapshot) => {
+      currentGLength = snapshot.val();
+      checkAndUpdateObstruction();
+    });
+
+    ultrasonicRef.on("value", (snapshot) => {
+      currentDistance = snapshot.val();
+      checkAndUpdateObstruction();
+    });
+
+    resultRef.on("value", (snapshot) => {
+      const result = snapshot.val();
+      if (result) {
+        resultBox.textContent = result;
+      }
+    });
+  </script>
+</body>
+</html>
